@@ -1,16 +1,54 @@
+let tasks = [];
+let taskIdCounter = 1;
+ 
+function getTasksFromStorage() {
+    try { 
+        const storedTasks = localStorage.getItem('Tasks');
+        if (storedTasks) { 
+            const parsedTasks = JSON.parse(storedTasks); 
+            if (Array.isArray(parsedTasks)) {
+                return parsedTasks.filter(task => 
+                    task && 
+                    typeof task.id === 'number' && 
+                    typeof task.title === 'string' &&
+                    typeof task.status === 'string'
+                );
+            }
+        }
+    } catch (error) { 
+        console.error('Error loading tasks from localStorage:', error);
+    }
+    return [];
+}
+ 
+function initializeApp() {
+    tasks = getTasksFromStorage(); 
+    if (tasks.length > 0) {
+        taskIdCounter = Math.max(...tasks.map(task => task.id)) + 1;
+    }
+}
+ 
+function saveTasksToStorage() {
+    try {
+        localStorage.setItem('Tasks', JSON.stringify(tasks));
+    } catch (error) { 
+        console.error('Error saving tasks to localStorage:', error);
+        alert('Failed to save tasks. Storage might be full.');
+    }
+}
 
-let tasks = []; 
-let taskIdCounter = 1; 
 
 // Add task functionality
 function addTask() {
     const titleInput = document.getElementById('task-title');
     const descriptionInput = document.getElementById('task-description');
 
+
     if (!titleInput.value.trim()) {
         titleInput.focus()
         return
     }
+
     const task = {
         id: taskIdCounter++,
         title: titleInput.value.trim(),
@@ -18,9 +56,9 @@ function addTask() {
         status: 'todo',
         createAt: new Date()
     }
-    tasks.push(task)
-    setGetLocally('set')
-    renderTask(task, 'todo-list') 
+    tasks.push(task) 
+    saveTasksToStorage()
+    renderTask(task, 'todo-list')
 
     titleInput.value = ''
     descriptionInput.value = ''
@@ -38,25 +76,6 @@ function showSuccessMessage() {
     }, 3000);
 }
 
-function setGetLocally(str){
-    if(str === "set"){
-        
-        tasks.forEach(task=>{
-            localStorage.setItem(task.id , JSON.stringify(task))
-            const test = JSON.parse(localStorage.getItem(task.id))
-            console.log(test.title)
-            
-        })
-    }
-    else if(str==="get"){
-        tasks.forEach(task=>{
-            localStorage.getItem(task.id) 
-        })
-    }else{
-        console.log("empty storage!")
-    }
-}
-
 function renderTask(task, containerId) {
     const container = document.getElementById(containerId)
     // remove empty state if exist 
@@ -68,6 +87,7 @@ function renderTask(task, containerId) {
     const taskElement = document.createElement("div")
     taskElement.classList.add("task-item")
     taskElement.classList.add("w-full")
+    taskElement.draggable = true
 
     taskElement.dataset.taskId = task.id
 
@@ -93,25 +113,58 @@ function renderTask(task, containerId) {
         </div>
     `
 
-    container.appendChild(taskElement)
-    // // Add drag event listeners
-    // taskElement.addEventListener('dragstart', handleDragStart);
+    container.appendChild(taskElement) 
+    // Drag and drop functionality
+    let draggedTaskId = null;
+    taskElement.addEventListener('dragstart', (e) => {
+        draggedTaskId = parseInt(e.target.dataset.taskId);
+        e.target.style.opacity = 0.5;
+
+        document.querySelectorAll('.board').forEach((board) => {
+            board.addEventListener('dragover', (e) => {
+                e.preventDefault()
+                this.classList.add('bg-[#e0e7ff]', 'border-indigo-500')
+            })
+            board.addEventListener('dragleave', (e) => {
+                this.classList.remove('bg-[#e0e7ff]', 'border-indigo-500')
+            })
+            board.addEventListener('drop', function (e) {
+                e.preventDefault()
+                this.classList.remove('bg-[#e0e7ff]', 'border-indigo-500')
+                const newStatus = this.getAttribute('data-status');
+                if (draggedTaskId && newStatus) {
+                    moveTask(draggedTaskId, newStatus);
+                }
+                // reset dragged opacity
+                const draggedElement = document.querySelector(`[data-task-id="${draggedTaskId}"]`)
+                if (draggedElement) {
+                    draggedElement.style.opacity = 1;
+                }
+                draggedTaskId = null
+            });
+        });
+    });
 
 }
 function moveTask(taskId, newStatus) {
     const task = tasks.find(t => t.id === taskId)
     if (task) {
-        task.status = newStatus
-        reRenderAllTasks(); 
+        task.status = newStatus;
+        saveTasksToStorage();
+        reRenderAllTasks();
         updateCounts();
     }
 }
 function deleteTask(taskId) {
-    if (confirm('are you sure to delete this task?')) {
-        const task = tasks.find(t => t.id === taskId)  
-        console.log(`${tasks.pop(task)}\ndeleted succuessfully`)
-        reRenderAllTasks(); 
-        updateCounts();
+    if (confirm('Are you sure you want to delete this task?')) {
+        const taskIndex = tasks.findIndex(t => t.id === taskId) 
+        if(taskIndex !== -1){
+            const deletedTask = tasks.splice(taskIndex,1)[0]
+            console.log(`Deleted task : ${deleteTask}`)
+            saveTasksToStorage();
+            reRenderAllTasks();
+            updateCounts();
+        }
     }
 }
 function editTask(taskId) {
@@ -119,12 +172,13 @@ function editTask(taskId) {
     if (task) {
         const newTitle = prompt("Edit task Title:", task.title)
         const newDes = prompt("Edit task description:", task.description)
-        if (newTitle === '' || newDes === '') {
+        if (newTitle === '') {
             alert('invalid title name try again')
             return
         } else {
             task.title = newTitle.trim()
             task.description = newDes.trim()
+            saveTasksToStorage();
             reRenderAllTasks();
 
         }
@@ -138,8 +192,8 @@ function reRenderAllTasks() {
         if (list) list.innerHTML = '';
     })
     // re-render tasks
-    tasks.forEach(task => { 
-        let containerId ;
+    tasks.forEach(task => {
+        let containerId;
         if (task.status === 'todo') {
             containerId = 'todo-list';
         } else if (task.status === 'progress') {
@@ -147,8 +201,8 @@ function reRenderAllTasks() {
         } else if (task.status === 'done') {
             containerId = 'done-list';
         } else {
-            containerId = 'todo-list';  
-        } 
+            containerId = 'todo-list';
+        }
         renderTask(task, containerId);
 
     });
@@ -156,69 +210,38 @@ function reRenderAllTasks() {
     ['todo', 'progress', 'done'].forEach(status => {
         const statusId = status + '-list'
         const list = document.getElementById(statusId)
-        const statusTasks = tasks.filter(task => task.status === status) 
+        const statusTasks = tasks.filter(task => task.status === status)
         if (statusTasks.length === 0) {
             const emptyState = document.createElement('div')
-            emptyState.classList.add('empty-state', 'text-gray-500', 'italic','m-4')
+            emptyState.classList.add('empty-state', 'text-gray-500', 'italic', 'm-4')
             emptyState.textContent = status === 'todo' ? "No tasks yet. Add one above! 👆" :
                 status === 'progress' ? "Drag tasks here when you start working!🎯" : "Completed tasks will appear here! 🎉"
-            list.appendChild(emptyState)
+            try {
+                list.appendChild(emptyState)
+            } catch (error) {
+                console.log(`ERROR : ${error}`)
+            }
         }
     })
 
-} 
-
-function updateCounts(){
-    // update board counts
-    document.getElementById('todo-count').textContent = tasks.filter(task=>task.status === 'todo').length
-    document.getElementById('progress-count').textContent = tasks.filter(task=>task.status === 'progress').length
-    document.getElementById('done-count').textContent = tasks.filter(task=>task.status === 'done').length
 }
 
-
-// // Drag and drop functionality
-// let draggedTaskId = null;
-
-// function handleDragStart(e) {
-//     draggedTaskId = parseInt(e.target.dataset.taskId);
-//     e.target.style.opacity = '0.5';
-// }
-
-// // Add drag over and drop handlers to boards
-// document.querySelectorAll('.board').forEach(board => {
-//     board.addEventListener('dragover', function (e) {
-//         e.preventDefault();
-//         this.classList.add('drag-over');
-//     });
-
-//     board.addEventListener('dragleave', function (e) {
-//         this.classList.remove('drag-over');
-//     });
-
-//     board.addEventListener('drop', function (e) {
-//         e.preventDefault();
-//         this.classList.remove('drag-over');
-
-//         const newStatus = this.dataset.status;
-//         if (draggedTaskId && newStatus) {
-//             moveTask(draggedTaskId, newStatus);
-//         }
-
-//         // Reset dragged task opacity
-//         const draggedElement = document.querySelector(`[data-task-id="${draggedTaskId}"]`);
-//         if (draggedElement) {
-//             draggedElement.style.opacity = '1';
-//         }
-//         draggedTaskId = null;
-//     });
-// });
-
-// // Add task on Enter key
-// document.getElementById('task-title').addEventListener('keypress', function (e) {
-//     if (e.key === 'Enter') {
-//         addTask();
-//     }
-// });
+function updateCounts() {
+    // update board counts
+    document.getElementById('todo-count').textContent = tasks.filter(task => task.status === 'todo').length
+    document.getElementById('progress-count').textContent = tasks.filter(task => task.status === 'progress').length
+    document.getElementById('done-count').textContent = tasks.filter(task => task.status === 'done').length
+}
 
 // Initialize
-// renderAllTasks(); 
+document.addEventListener('DOMContentLoaded', () => { 
+    initializeApp();
+    updateCounts();
+    reRenderAllTasks();
+    document.getElementById('task-title').addEventListener("keypress", (e) => {
+        if (e.key == 'Enter') {
+            addTask()
+        }
+    })
+})
+
